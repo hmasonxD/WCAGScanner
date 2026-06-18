@@ -3,11 +3,15 @@
 Automated WCAG accessibility scanner with a plain-language dashboard, built for
 public-sector websites.
 
+**Live demo:** https://accessscan.fly.dev
+
 Paste a public URL. AccessScan loads the page in a real headless browser, runs
 the open-source [axe-core](https://github.com/dequelabs/axe-core) audit engine
 against the live DOM, and presents the findings translated into language a
 non-technical reader can act on: what the problem is, who it affects, and how to
 fix it.
+
+![AccessScan scanning the Rural Municipalities of Alberta](docs/demo.png)
 
 ## Why it's built this way
 
