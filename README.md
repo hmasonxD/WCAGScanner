@@ -1,73 +1,103 @@
-# React + TypeScript + Vite
+# AccessScan
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Automated WCAG accessibility scanner with a plain-language dashboard, built for
+public-sector websites.
 
-Currently, two official plugins are available:
+Paste a public URL. AccessScan loads the page in a real headless browser, runs
+the open-source [axe-core](https://github.com/dequelabs/axe-core) audit engine
+against the live DOM, and presents the findings translated into language a
+non-technical reader can act on: what the problem is, who it affects, and how to
+fix it.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Why it's built this way
 
-## React Compiler
+- **Real browser, not a fetch.** Modern sites build most of their content with
+  JavaScript, and contrast checks need real computed styles. So the scanner uses
+  Playwright + Chromium to render the page exactly as a visitor's browser would,
+  then runs the audit. A plain HTML fetch would miss most of the page.
+- **axe-core does the rule-checking.** axe-core is the maintained industry
+  standard (it's also what powers Lighthouse's accessibility audit). Embedding it
+  is the right call; reinventing WCAG rule logic would be years of edge cases.
+- **The translation layer is the product.** Raw axe output is developer-facing.
+  `server/translate.ts` maps each rule to a resident-focused explanation, parses
+  the WCAG criteria and conformance level out of axe's tags, and falls back to
+  axe's own help text for any rule it doesn't have custom copy for — so it works
+  on any site.
+- **Honest about scope.** The dashboard states plainly that automated testing
+  catches roughly 30–50% of WCAG issues and the rest needs human review. A tool
+  that pretends otherwise isn't trustworthy.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Run it locally
 
-## Expanding the ESLint configuration
+Requires Node 18+.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+```bash
+npm install
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# One-time: download the Chromium browser Playwright drives.
+npx playwright install chromium
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Run frontend (Vite, port 5173) and backend (Express, port 8080) together.
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Then open http://localhost:5173. (Works the same on Windows/PowerShell.)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Production build
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build   # builds the React app into dist/client
+npm start       # Express serves the API and the built frontend on port 8080
 ```
+
+## Deploy to Fly.io
+
+The Dockerfile is based on the official Playwright image, so Chromium and its
+system libraries are already present — that's the part that's usually painful.
+
+```bash
+fly launch --no-deploy   # claim an app name; keep the existing Dockerfile
+fly deploy
+```
+
+A headless browser needs memory; `fly.toml` requests 1 GB, which is a safe floor.
+
+## Architecture
+
+```
+Browser (React + TS)
+   │  POST /api/scan { url }
+   ▼
+Express server (server/index.ts)
+   │  validate URL, basic per-IP rate limit
+   ▼
+Scanner (server/scanner.ts)
+   │  Playwright launches Chromium → load page → inject axe-core → analyze
+   ▼
+Translation layer (server/translate.ts)
+   │  axe violations → plain-language, resident-focused findings + WCAG refs
+   ▼
+JSON response → dashboard renders, grouped and sorted by user impact
+```
+
+| Piece                     | File                  | Responsibility                                   |
+| ------------------------- | --------------------- | ------------------------------------------------ |
+| Scan API + static serving | `server/index.ts`     | Endpoint, validation, rate limiting              |
+| Scanning engine           | `server/scanner.ts`   | Headless browser + axe-core                      |
+| Translation               | `server/translate.ts` | The plain-language layer                         |
+| Dashboard                 | `client/`             | React UI, severity grouping, the violation cards |
+
+## Where this would go next
+
+This is a single-page prototype. The path to the real product:
+
+1. **Crawl, don't just scan one page** — discover URLs via `sitemap.xml` and
+   link-following, scan the whole site.
+2. **Persist results** — store scans in Postgres so clients see trends over time
+   ("320 issues down to 40").
+3. **A real job queue** — move scans onto a Redis-backed queue (BullMQ) so big
+   sites and scheduled re-scans don't block.
+4. **PDF validation module** — validate uploaded PDFs against PDF/UA using
+   veraPDF, since municipal PDFs (agendas, bylaws, forms) are a major gap.
+5. **VPAT-style reporting** — roll aggregated results into a conformance report
+   for procurement.
