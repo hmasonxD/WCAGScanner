@@ -17,3 +17,22 @@ export interface TranslatedViolation {
   sampleSelectors: string[];
   sampleHtml: string;
 }
+
+export interface ScanSummary {
+  total: number;
+  critical: number;
+  serious: number;
+  moderate: number;
+  minor: number;
+  passes: number;
+  incomplete: number;
+}
+
+export interface ScanResult {
+  url: string;
+  finalUrl: string;
+  scannedAt: string;
+  pageTitle: string;
+  summary: ScanSummary;
+  violations: TranslatedViolation[];
+}
