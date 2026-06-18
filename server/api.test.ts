@@ -50,4 +50,13 @@ describe("POST /api/scan", () => {
     const res = await request(createApp()).get("/api/health");
     expect(res.body).toEqual({ ok: true });
   });
+
+  it("returns 400 on malformed JSON instead of crashing", async () => {
+    const res = await request(createApp())
+      .post("/api/scan")
+      .set("Content-Type", "application/json")
+      .send("{ this is not json }");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/valid json/i);
+  });
 });
